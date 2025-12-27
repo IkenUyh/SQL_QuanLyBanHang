@@ -229,12 +229,129 @@ ADD CONSTRAINT CK_KHACHHANG_NGDK
 CHECK (NGDK>NGSINH);
 
 --11 Ngày mua hàng (NGHD) của một khách hàng thành viên sẽ lớn hơn hoặc bằng ngày khách hàng đó đăng ký thành viên (NGDK).
+GO
+CREATE TRIGGER trg_KiemTraNGHD_NGDK
+ON HOADON
+FOR INSERT, UPDATE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT *
+        FROM INSERTED I
+        JOIN KHACHHANG K ON I.MAKH = K.MAKH
+        WHERE I.NGHD < K.NGDK
+    )
+    BEGIN
+        PRINT 'Loi: Ngay mua hang (NGHD) phai lon hon hoac bang ngay dang ky (NGDK).'
+        ROLLBACK TRANSACTION
+    END
+END
+
+GO
+CREATE TRIGGER trg_KiemTraNGDK_Sua
+ON KHACHHANG
+FOR UPDATE
+AS
+BEGIN
+    IF UPDATE(NGDK)
+    BEGIN
+        IF EXISTS (
+            SELECT *
+            FROM INSERTED I
+            JOIN HOADON H ON I.MAKH = H.MAKH
+            WHERE H.NGHD < I.NGDK
+        )
+        BEGIN
+            PRINT 'Loi: Khong the cap nhat ngay dang ky lon hon ngay mua hang da co.'
+            ROLLBACK TRANSACTION
+        END
+    END
+END
 
 --12 Ngày bán hàng (NGHD) của một nhân viên phải lớn hơn hoặc bằng ngày nhân viên đó vào làm.
+GO
+CREATE TRIGGER trg_KiemTraNGHD_NGVL
+ON HOADON
+FOR INSERT, UPDATE
+AS
+BEGIN
+    IF EXISTS (
+        SELECT *
+        FROM INSERTED I
+        JOIN NHANVIEN N ON I.MANV = N.MANV
+        WHERE I.NGHD < N.NGVL
+    )
+    BEGIN
+        PRINT 'Loi: Ngay ban hang (NGHD) phai lon hon hoac bang ngay vao lam (NGVL).'
+        ROLLBACK TRANSACTION
+    END
+END
+
+GO
+CREATE TRIGGER trg_KiemTraNGVL_Sua
+ON NHANVIEN
+FOR UPDATE
+AS
+BEGIN
+    IF UPDATE(NGVL)
+    BEGIN
+        IF EXISTS (
+            SELECT *
+            FROM INSERTED I
+            JOIN HOADON H ON I.MANV = H.MANV
+            WHERE H.NGHD < I.NGVL
+        )
+        BEGIN
+            PRINT 'Loi: Ngay vao lam moi vi pham cac hoa don nhan vien nay da lap.'
+            ROLLBACK TRANSACTION
+        END
+    END
+END
 
 --13 Mỗi một hóa đơn phải có ít nhất một chi tiết hóa đơn.
+GO
+CREATE TRIGGER trg_KiemTraCTHD_ToiThieu
+ON CTHD
+FOR DELETE, UPDATE
+AS
+BEGIN
+    DECLARE @SOHD int
+    DECLARE @SoLuongCTHD int
+    SELECT @SOHD = SOHD FROM DELETED
+    SELECT @SoLuongCTHD = COUNT(*) 
+    FROM CTHD 
+    WHERE SOHD = @SOHD
+    IF (@SoLuongCTHD < 1)
+    BEGIN
+        PRINT 'Loi: Moi hoa don phai co it nhat mot chi tiet hoa don.'
+        ROLLBACK TRANSACTION
+    END
+END
 
 --14 Trị giá của một hóa đơn là tổng thành tiền (số lượng*đơn giá) của các chi tiết thuộc hóa đơn đó.
+GO
+CREATE TRIGGER trg_CapNhatTriGia
+ON CTHD
+FOR INSERT, DELETE, UPDATE
+AS
+BEGIN
+    DECLARE @SOHD int
+    SELECT DISTINCT SOHD INTO #DanhSachHD 
+    FROM (
+        SELECT SOHD FROM INSERTED
+        UNION
+        SELECT SOHD FROM DELETED
+    ) AS Temp
+    UPDATE HOADON
+    SET TRIGIA = ISNULL((
+        SELECT SUM(C.SL * S.GIA)
+        FROM CTHD C
+        JOIN SANPHAM S ON C.MASP = S.MASP
+        WHERE C.SOHD = HOADON.SOHD
+    ), 0)
+    WHERE SOHD IN (SELECT SOHD FROM #DanhSachHD)
+    PRINT 'Da cap nhat tri gia hoa don.'
+END
 
 --15 Doanh số của một khách hàng là tổng trị giá các hóa đơn mà khách hàng thành viên đó đã mua.
 
